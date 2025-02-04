@@ -20,3 +20,8 @@ curl --location 'localhost:8000/chat-completion' \
 --form 'file=@"/path/to/file"' \
 --form 'prompt="Summerize the given document and include as much detail as possible."'
 ```
+
+### TODO
+- Fix image erros - it is throwing erros when images are served
+- Input and output file shoule be optional
+- Check if we can support rtf, xlsx, xls file extensions
