@@ -9,6 +9,9 @@ import base64
 import tempfile
 from enum import Enum
 from markdown_pdf import MarkdownPdf, Section
+from striprtf.striprtf import rtf_to_text
+import pandas as pd
+
 load_dotenv(override=True)
 
 app = FastAPI()
@@ -24,8 +27,8 @@ class ModelType(str, Enum):
 
 MODEL = 'gpt-4o'
 SUPPORTED_EXTENSIONS = set(
-    ['doc', 'dot', 'docx', 'dotx', 'docm', 'dotm', 'pdf', 'png', 'jpeg', 'jpg'])
-SYSTEM_PROMPT = "You are an assistant who analysis documents provided which are of type image, pdf or word. The pdf and word document will be given to after extracting the text from them.\nThe document content will be specified by a different heading for you to differentiate between the document content and user prompt.\nIgnore all the formatting, spacing issues and line breaks, do not bring it up to the user or in the final response and correct them silently yourself.\nYou will give your response in markdown."
+    ['doc', 'dot', 'docx', 'dotx', 'docm', 'dotm', 'pdf', 'png', 'jpeg', 'jpg', 'rtf', 'xlsx', 'xls'])
+SYSTEM_PROMPT = "You are an assistant who analysis documents provided which are of type image, pdf or word. The pdf and word document will be given to after extracting the text from them.\nThe document content will be specified by a different heading for you to differentiate between the document content and user prompt.\nIgnore all the formatting, spacing issues and line breaks, do not bring it up to the user or in the final response and correct them silently yourself.\nYou will give your response in beautiful and structured markdown unless specified explicitly."
 
 # Health checkup end point
 @app.get("/")
@@ -37,18 +40,14 @@ def health():
 
 # Chat completion end point
 @app.post("/chat-completion")
-def chatCompletion(prompt: Annotated[str, Form()], response_type: Annotated[ResponseType, Form()] = ResponseType.string, model_name: Annotated[ModelType, Form()] = ModelType.gpt4omini, file: Annotated[UploadFile | None, File()] = None):
+def chatCompletion(prompt: Annotated[str, Form()], response_type: Annotated[ResponseType, Form()] = ResponseType.string, model_name: Annotated[ModelType, Form()] = ModelType.gpt4omini, file: Annotated[UploadFile | None, File()] = None, sheet_names: Annotated[str | None, Form()] = None):
     MODEL = model_name
-    print(MODEL)
     documentText = ''
     b64 = None
     if file is not None:
         fileExt = file.filename.split('.')[-1].lower()
         if fileExt not in SUPPORTED_EXTENSIONS:
-            return {
-                "status": "failed",
-                "message": "File type not supported"
-            }
+            raise HTTPException(400, f"{fileExt} file type not supported")
         if fileExt == 'pdf':
             reader = PdfReader(file.file)
             for page in reader.pages:
@@ -64,6 +63,26 @@ def chatCompletion(prompt: Annotated[str, Form()], response_type: Annotated[Resp
                     img.write(file.file.read())
                 with open(path, 'rb') as img:
                     b64 = base64.b64encode(img.read()).decode("utf-8")
+        elif fileExt in ['rtf']:
+            documentText = rtf_to_text(file.file.read().decode('utf-8'))
+        elif fileExt in ['xls', 'xlsx']:
+            try:
+                excelDF = None
+                if sheet_names is None or len(sheet_names) == 0:
+                    excelDF = pd.read_excel(file.file)
+                    documentText = excelDF.to_string()
+                else:
+                    sheet_name_arr = list(map(lambda x: x.strip(), sheet_names.split(',')))
+                    excelDF = pd.read_excel(file.file, sheet_name=sheet_name_arr)
+                    if not isinstance(excelDF, dict):
+                        raise HTTPException(400, "Something went wrong while parsing the excel sheet")
+                    for key in excelDF:
+                        documentText += f'Sheet Name: {key}\n\n'
+                        documentText += excelDF[key].to_string()
+                        documentText += '\n\n'
+            except Exception as exp:
+                print(exp)
+                raise HTTPException(400, "Worksheet name not found")
         else:
             document = Document(file.file)
             for paragraph in document.paragraphs:
@@ -114,7 +133,7 @@ def chatCompletion(prompt: Annotated[str, Form()], response_type: Annotated[Resp
     print(response.choices[0].message.content)
 
     if response_type is ResponseType.pdf:
-        pdf = MarkdownPdf()
+        pdf = MarkdownPdf(toc_level=2)
         content = response.choices[0].message.content
         # while breakWords <= len(content):
         pdf.add_section(Section(content))
