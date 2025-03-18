@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Header
 from fastapi.responses import FileResponse
 import openai
 from dotenv import load_dotenv
@@ -11,8 +11,11 @@ from enum import Enum
 from markdown_pdf import MarkdownPdf, Section
 from striprtf.striprtf import rtf_to_text
 import pandas as pd
+import os
 
 load_dotenv(override=True)
+import os
+AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY")
 
 app = FastAPI()
 client = openai.OpenAI()
@@ -40,10 +43,16 @@ def health():
 
 # Chat completion end point
 @app.post("/chat-completion")
-def chatCompletion(prompt: Annotated[str, Form()], response_type: Annotated[ResponseType, Form()] = ResponseType.string, model_name: Annotated[ModelType, Form()] = ModelType.gpt4omini, file: Annotated[UploadFile | None, File()] = None, sheet_names: Annotated[str | None, Form()] = None):
+def chatCompletion(prompt: Annotated[str, Form()], response_type: Annotated[ResponseType, Form()] = ResponseType.string, model_name: Annotated[ModelType, Form()] = ModelType.gpt4omini, file: Annotated[UploadFile | None, File()] = None, sheet_names: Annotated[str | None, Form()] = None, authorization: Annotated[str | None, Header()] = None):
     MODEL = model_name
     documentText = ''
     b64 = None
+
+    if not authorization == AUTH_SECRET_KEY:
+        print(f"Authorization header: {authorization}")
+        raise HTTPException(
+            status_code=401, detail="Provide the correct authorization token in headers")
+
     if file is not None:
         fileExt = file.filename.split('.')[-1].lower()
         if fileExt not in SUPPORTED_EXTENSIONS:
