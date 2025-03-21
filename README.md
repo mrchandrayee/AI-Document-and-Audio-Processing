@@ -26,9 +26,3 @@ curl --location 'http://localhost:8000/chat-completion' \
 `model_name` can be 'gpt-4o' or 'gpt-4o-mini'
 `response_type` can be 'string' or 'pdf'
 `sheet_names` can be specified for excel documents, these are string of values seperated by commas. Note: If calling this API from postman don't include quotes as it can break things. If not specified the API will use the first sheet.
-
-### TODO
-- Fix image erros - it is throwing erros when images are served
-- Input and output file shoule be optional
-- Check if we can support rtf, xlsx, xls file extensions
-> This needs excel parsing to make sure the rows and columns relationship is maintained in a way so that when we pass the raw data to the model it have the context about the table in excel.
