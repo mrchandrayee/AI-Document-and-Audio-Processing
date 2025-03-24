@@ -14,7 +14,6 @@ import pandas as pd
 import os
 
 load_dotenv(override=True)
-import os
 AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY")
 
 app = FastAPI()

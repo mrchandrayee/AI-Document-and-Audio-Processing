@@ -26,3 +26,6 @@ curl --location 'http://localhost:8000/chat-completion' \
 `model_name` can be 'gpt-4o' or 'gpt-4o-mini'
 `response_type` can be 'string' or 'pdf'
 `sheet_names` can be specified for excel documents, these are string of values seperated by commas. Note: If calling this API from postman don't include quotes as it can break things. If not specified the API will use the first sheet.
+
+## TO DO
+1. A new API that takes a zip file and summarise each file in it. The upper limit of file would be 20MB. The max no. of files inside it can be 20 for now.
