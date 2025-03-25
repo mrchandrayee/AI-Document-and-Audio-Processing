@@ -1,4 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Header
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 import openai
 from dotenv import load_dotenv
@@ -18,6 +19,14 @@ AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY")
 
 app = FastAPI()
 client = openai.OpenAI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow requests from your frontend domain
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all HTTP methods
+    allow_headers=["*"],  # Allow all headers
+)
 
 class ResponseType(str, Enum):
     pdf = "pdf"
