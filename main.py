@@ -68,7 +68,10 @@ def chatCompletion(prompt: Annotated[str, Form()], response_type: Annotated[Resp
         if fileExt == 'pdf':
             reader = PdfReader(file.file)
             for page in reader.pages:
-                documentText += page.extract_text(extraction_mode='layout')
+                extracted_text = page.extract_text(extraction_mode='layout')
+                if len(extracted_text.strip()) == 0:
+                    extracted_text = page.extract_text()
+                documentText += extracted_text
                 documentText += '\n\n'
             if len(documentText.strip()) == 0:
                 raise HTTPException(
