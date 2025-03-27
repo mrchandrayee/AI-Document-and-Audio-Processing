@@ -13,6 +13,8 @@ from markdown_pdf import MarkdownPdf, Section
 from striprtf.striprtf import rtf_to_text
 import pandas as pd
 import os
+from .util import parseDocuments
+import requests
 
 load_dotenv(override=True)
 AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY")
@@ -38,7 +40,7 @@ class ModelType(str, Enum):
 
 MODEL = 'gpt-4o'
 SUPPORTED_EXTENSIONS = set(
-    ['doc', 'dot', 'docx', 'dotx', 'docm', 'dotm', 'pdf', 'png', 'jpeg', 'jpg', 'rtf', 'xlsx', 'xls'])
+    ['doc', 'dot', 'docx', 'dotx', 'docm', 'dotm', 'pdf', 'png', 'jpeg', 'jpg', 'rtf', 'xlsx', 'xls', 'txt'])
 SYSTEM_PROMPT = "You are an assistant who analysis documents provided which are of type image, pdf or word. The pdf and word document will be given to after extracting the text from them.\nThe document content will be specified by a different heading for you to differentiate between the document content and user prompt.\nIgnore all the formatting, spacing issues and line breaks, do not bring it up to the user or in the final response and correct them silently yourself.\nYou will give your response in beautiful and structured markdown unless specified explicitly."
 
 # Health checkup end point
@@ -50,13 +52,13 @@ def health():
     }
 
 # Chat completion end point
-@app.post("/chat-completion")
+@app.post("/v1/chat-completion")
 def chatCompletion(prompt: Annotated[str, Form()], response_type: Annotated[ResponseType, Form()] = ResponseType.string, model_name: Annotated[ModelType, Form()] = ModelType.gpt4omini, file: Annotated[UploadFile | None, File()] = None, sheet_names: Annotated[str | None, Form()] = None, authorization: Annotated[str | None, Header()] = None):
     MODEL = model_name
     documentText = ''
     b64 = None
 
-    if not authorization == AUTH_SECRET_KEY:
+    if not authorization or (authorization != AUTH_SECRET_KEY):
         print(f"Authorization header: {authorization}")
         raise HTTPException(
             status_code=401, detail="Provide the correct authorization token in headers")
@@ -103,6 +105,8 @@ def chatCompletion(prompt: Annotated[str, Form()], response_type: Annotated[Resp
             except Exception as exp:
                 print(exp)
                 raise HTTPException(400, "Worksheet name not found")
+        elif fileExt == 'txt':
+            documentText += file.file.read().decode('utf-8')
         else:
             document = Document(file.file)
             for paragraph in document.paragraphs:
@@ -115,7 +119,6 @@ def chatCompletion(prompt: Annotated[str, Form()], response_type: Annotated[Resp
             #             textRow.add(f"{cell.text}\n")
             #     text += f"{' '.join(list(textRow))}\n\n"
             # print(text)
-
     userContent = [
         {
             "type": "text",
@@ -128,7 +131,19 @@ def chatCompletion(prompt: Annotated[str, Form()], response_type: Annotated[Resp
     elif b64 is not None:
         userContent[0]['text'] = "I will be attaching an image"
 
+    messages = [
+        {
+            "role": "system",
+            "content": SYSTEM_PROMPT
+        },
+        {
+            "role": "user",
+            "content": userContent
+        }
+    ]
+
     if file is None:
+        messages = messages[1:]
         userContent[0]['text'] = prompt
 
     if b64 is not None:
@@ -139,18 +154,8 @@ def chatCompletion(prompt: Annotated[str, Form()], response_type: Annotated[Resp
 
     response = client.chat.completions.create(
         model=MODEL,
-        messages=[
-            {
-                "role": "system",
-                "content": SYSTEM_PROMPT
-            },
-            {
-                "role": "user",
-                "content": userContent
-            }
-        ]
+        messages=messages
     )
-    print(response.choices[0].message.content)
 
     if response_type is ResponseType.pdf:
         pdf = MarkdownPdf(toc_level=2)
@@ -167,4 +172,69 @@ def chatCompletion(prompt: Annotated[str, Form()], response_type: Annotated[Resp
         "status": "success",
         "prompt": prompt,
         "response": response.choices[0].message.content
+    }
+
+@app.post("/v2/chat-completion")
+def chatCompletionV2(prompt: Annotated[str, Form()], model_name: Annotated[ModelType, Form()] = ModelType.gpt4omini, file: Annotated[UploadFile | None, File()] = None, sheet_names: Annotated[str | None, Form()] = None, authorization: Annotated[str | None, Header()] = None):
+    if not authorization or (authorization != AUTH_SECRET_KEY):
+        print(f"Authorization header: {authorization}")
+        raise HTTPException(
+            status_code=401, detail="Provide the correct authorization token in headers")
+    
+    MODEL = model_name
+    documentText, b64 = parseDocuments(file, sheet_names)
+    userContent = [
+        {
+            "type": "text",
+            "text": ""
+        }
+    ]
+
+    if len(documentText) > 0:
+        userContent[0]['text'] = f"User prompt:\n{prompt}\n\nThis is document content: \n{documentText}"
+    elif b64 is not None:
+        userContent[0]['text'] = "I will be attaching an image"
+
+    messages = [
+        {
+            "role": "system",
+            "content": SYSTEM_PROMPT
+        },
+        {
+            "role": "user",
+            "content": userContent
+        }
+    ]
+
+    if file is None:
+        messages = messages[1:]
+        userContent[0]['text'] = prompt
+
+    if b64 is not None:
+        userContent.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/jpeg;base64,{b64}"}
+        })
+
+    response = client.chat.completions.create(
+        model=MODEL,
+        messages=messages
+    )
+    pdf = MarkdownPdf(toc_level=2)
+    content = response.choices[0].message.content
+    pdf.add_section(Section(content))
+    pdf.save(f"response.pdf")
+
+    files=[
+        ('file',('response.pdf',open('response.pdf','rb'),'application/pdf'))
+    ]
+    upload_response = requests.request("POST", "https://tmpfiles.org/api/v1/upload", files=files).json()
+    pdf_url:str = upload_response['data']['url']
+    download_link = "https://tmpfiles.org" + "/dl/" + '/'.join(pdf_url.split("/")[-2:])
+
+    return {
+        "status": "success",
+        "prompt": prompt,
+        "response": response.choices[0].message.content,
+        "pdf": download_link
     }

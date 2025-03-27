@@ -9,3 +9,4 @@ striprtf==0.0.28
 fastapi-cli==0.0.7
 python-multipart==0.0.20
 xlrd==2.0.1
+openpyxl==3.1.0
