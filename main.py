@@ -14,7 +14,14 @@ from striprtf.striprtf import rtf_to_text
 import pandas as pd
 import os
 from .util import parseDocuments
+from .system_prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_V2
 import requests
+import json
+from pydantic import BaseModel
+
+class ResponseSchema(BaseModel):
+    response: str
+    file_response: str
 
 load_dotenv(override=True)
 AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY")
@@ -41,7 +48,6 @@ class ModelType(str, Enum):
 MODEL = 'gpt-4o'
 SUPPORTED_EXTENSIONS = set(
     ['doc', 'dot', 'docx', 'dotx', 'docm', 'dotm', 'pdf', 'png', 'jpeg', 'jpg', 'rtf', 'xlsx', 'xls', 'txt'])
-SYSTEM_PROMPT = "You are an assistant who analysis documents provided which are of type image, pdf or word. The pdf and word document will be given to after extracting the text from them.\nThe document content will be specified by a different heading for you to differentiate between the document content and user prompt.\nIgnore all the formatting, spacing issues and line breaks, do not bring it up to the user or in the final response and correct them silently yourself.\nYou will give your response in beautiful and structured markdown unless specified explicitly."
 
 # Health checkup end point
 @app.get("/")
@@ -198,7 +204,7 @@ def chatCompletionV2(prompt: Annotated[str, Form()], model_name: Annotated[Model
     messages = [
         {
             "role": "system",
-            "content": SYSTEM_PROMPT
+            "content": SYSTEM_PROMPT_V2
         },
         {
             "role": "user",
@@ -218,23 +224,28 @@ def chatCompletionV2(prompt: Annotated[str, Form()], model_name: Annotated[Model
 
     response = client.chat.completions.create(
         model=MODEL,
-        messages=messages
+        messages=messages,
+        response_format={"type": "json_object"}
     )
-    pdf = MarkdownPdf(toc_level=2)
-    content = response.choices[0].message.content
-    pdf.add_section(Section(content))
-    pdf.save(f"response.pdf")
+    res_content = response.choices[0].message.content
+    content = json.loads(res_content)
+    download_link = None
 
-    files=[
-        ('file',('response.pdf',open('response.pdf','rb'),'application/pdf'))
-    ]
-    upload_response = requests.request("POST", "https://tmpfiles.org/api/v1/upload", files=files).json()
-    pdf_url:str = upload_response['data']['url']
-    download_link = "https://tmpfiles.org" + "/dl/" + '/'.join(pdf_url.split("/")[-2:])
+    if ("file_response" in content) and content['file_response'] is not None:
+        pdf = MarkdownPdf(toc_level=2)
+        pdf.add_section(Section(content['file_response']))
+        pdf.save(f"response.pdf")
+
+        files=[
+            ('file',('response.pdf',open('response.pdf','rb'),'application/pdf'))
+        ]
+        upload_response = requests.request("POST", "https://tmpfiles.org/api/v1/upload", files=files).json()
+        pdf_url:str = upload_response['data']['url']
+        download_link = "https://tmpfiles.org" + "/dl/" + '/'.join(pdf_url.split("/")[-2:])
 
     return {
         "status": "success",
         "prompt": prompt,
-        "response": response.choices[0].message.content,
+        "response": content['response'],
         "pdf": download_link
     }
