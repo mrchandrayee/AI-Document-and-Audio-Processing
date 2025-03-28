@@ -5,12 +5,16 @@ import base64
 from striprtf.striprtf import rtf_to_text
 from docx import Document
 import pandas as pd
+from io import BytesIO
+import pypdfium2 as pdfium
+import os
 
 SUPPORTED_EXTENSIONS = set(
     ['doc', 'dot', 'docx', 'dotx', 'docm', 'dotm', 'pdf', 'png', 'jpeg', 'jpg', 'rtf', 'xlsx', 'xls', 'txt'])
 
-def parseDocuments(file: UploadFile, sheet_names: str):
+def parseDocuments(file: UploadFile, sheet_names: str, parseAsImage: bool = False):
     documentText = ''
+    base64_urls = []
     b64 = None
 
     if file is not None:
@@ -18,16 +22,30 @@ def parseDocuments(file: UploadFile, sheet_names: str):
         if fileExt not in SUPPORTED_EXTENSIONS:
             raise HTTPException(400, f"{fileExt} file type not supported")
         if fileExt == 'pdf':
-            reader = PdfReader(file.file)
-            for page in reader.pages:
-                extracted_text = page.extract_text(extraction_mode='layout')
-                if len(extracted_text.strip()) == 0:
-                    extracted_text = page.extract_text()
-                documentText += extracted_text
-                documentText += '\n\n'
-            if len(documentText.strip()) == 0:
-                raise HTTPException(
-                    status_code=400, detail="Unable to parse text from the given document or the document does not contain any text.")
+            if not parseAsImage:
+                reader = PdfReader(file.file)
+                for page in reader.pages:
+                    extracted_text = page.extract_text(extraction_mode='layout')
+                    if len(extracted_text.strip()) == 0:
+                        extracted_text = page.extract_text()
+                    documentText += extracted_text
+                    documentText += '\n\n'
+                if len(documentText.strip()) == 0:
+                    raise HTTPException(
+                        status_code=400, detail="Unable to parse text from the given document or the document does not contain any text.")
+            else:
+                p = pdfium.PdfDocument(file.file)
+                if len(p) > 20:
+                    raise HTTPException(status_code=400, detail="File is too large to be processed")
+                for i in range(len(p)):
+                    page = p[i]
+                    buffered = BytesIO()
+                    image = page.render(scale=2).to_pil()
+                    image.save(buffered, format="JPEG")
+                    img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+                    base64_urls.append(f"data:image/jpeg;base64,{img_str}")
+                documentText = "Images are provided as document"
+
         elif fileExt in ['png', 'jpeg', 'jpg']:
             with tempfile.TemporaryDirectory() as temp_dir:
                 path = f"{temp_dir}/filename.{fileExt}"
@@ -69,4 +87,4 @@ def parseDocuments(file: UploadFile, sheet_names: str):
             #             textRow.add(f"{cell.text}\n")
             #     text += f"{' '.join(list(textRow))}\n\n"
             # print(text)
-    return [documentText, b64]
+    return [documentText, b64, base64_urls]

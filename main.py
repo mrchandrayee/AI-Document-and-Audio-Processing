@@ -13,8 +13,8 @@ from markdown_pdf import MarkdownPdf, Section
 from striprtf.striprtf import rtf_to_text
 import pandas as pd
 import os
-from .util import parseDocuments
-from .system_prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_V2
+from util import parseDocuments
+from system_prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_V2
 import requests
 import json
 from pydantic import BaseModel
@@ -188,7 +188,7 @@ def chatCompletionV2(prompt: Annotated[str, Form()], model_name: Annotated[Model
             status_code=401, detail="Provide the correct authorization token in headers")
     
     MODEL = model_name
-    documentText, b64 = parseDocuments(file, sheet_names)
+    documentText, b64, _ = parseDocuments(file, sheet_names)
     userContent = [
         {
             "type": "text",
@@ -213,7 +213,6 @@ def chatCompletionV2(prompt: Annotated[str, Form()], model_name: Annotated[Model
     ]
 
     if file is None:
-        messages = messages[1:]
         userContent[0]['text'] = prompt
 
     if b64 is not None:
@@ -236,6 +235,91 @@ def chatCompletionV2(prompt: Annotated[str, Form()], model_name: Annotated[Model
 
     res_content = response.choices[0].message.content
     content = json.loads(res_content)
+    print(content)
+    download_link = None
+
+    if ("file_response" in content) and content['file_response'] is not None:
+        pdf = MarkdownPdf(toc_level=2)
+        pdf.add_section(Section(content['file_response']))
+        pdf.save(f"response.pdf")
+
+        files=[
+            ('file',('response.pdf',open('response.pdf','rb'),'application/pdf'))
+        ]
+        upload_response = requests.request("POST", "https://tmpfiles.org/api/v1/upload", files=files).json()
+        pdf_url:str = upload_response['data']['url']
+        download_link = "https://tmpfiles.org" + "/dl/" + '/'.join(pdf_url.split("/")[-2:])
+
+    return {
+        "status": "success",
+        "prompt": prompt,
+        "response": content['response'],
+        "pdf": download_link
+    }
+
+@app.post("/v3/chat-completion")
+def chatCompletionV3(prompt: Annotated[str, Form()], model_name: Annotated[ModelType, Form()] = ModelType.gpt4omini, file: Annotated[UploadFile | None, File()] = None, sheet_names: Annotated[str | None, Form()] = None, authorization: Annotated[str | None, Header()] = None):
+    if not authorization or (authorization != AUTH_SECRET_KEY):
+        print(f"Authorization header: {authorization}")
+        raise HTTPException(
+            status_code=401, detail="Provide the correct authorization token in headers")
+    
+    MODEL = model_name
+    documentText, b64, base64_urls = parseDocuments(file, sheet_names, True)
+    userContent = [
+        {
+            "type": "text",
+            "text": ""
+        }
+    ]
+
+    if len(documentText) > 0:
+        userContent[0]['text'] = f"User prompt:\n{prompt}\n\nThis is document content: \n{documentText}"
+    elif b64 is not None:
+        userContent[0]['text'] = "I will be attaching an image"
+
+    messages = [
+        {
+            "role": "system",
+            "content": SYSTEM_PROMPT_V2
+        },
+        {
+            "role": "user",
+            "content": userContent
+        }
+    ]
+
+    if file is None:
+        userContent[0]['text'] = prompt
+
+    if b64 is not None:
+        userContent.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/jpeg;base64,{b64}"}
+        })
+
+    if len(base64_urls) > 0:
+        for url in base64_urls:
+            userContent.append({
+                "type": "image_url",
+                "image_url": {"url": url, "detail": "low"},
+            })
+
+    response = {}
+    try:
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=messages,
+            response_format={"type": "json_object"}
+        )
+    except openai.RateLimitError as e:
+        print(f"Rate limit error occurred: {e}")
+        raise HTTPException(
+            status_code=429, detail="OpenAI token limit exceeded")
+
+    res_content = response.choices[0].message.content
+    content = json.loads(res_content)
+    print(content)
     download_link = None
 
     if ("file_response" in content) and content['file_response'] is not None:
