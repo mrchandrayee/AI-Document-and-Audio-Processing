@@ -13,8 +13,8 @@ from markdown_pdf import MarkdownPdf, Section
 from striprtf.striprtf import rtf_to_text
 import pandas as pd
 import os
-from util import parseDocuments
-from system_prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_V2
+from .util import parseDocuments
+from .system_prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_V2
 import requests
 import json
 from pydantic import BaseModel
