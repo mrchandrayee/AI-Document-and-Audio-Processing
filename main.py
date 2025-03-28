@@ -236,7 +236,7 @@ def chatCompletionV2(prompt: Annotated[str, Form()], model_name: Annotated[Model
     except openai.RateLimitError as e:
         print(f"Rate limit error occurred: {e}")
         raise HTTPException(
-            status_code=429, detail="OpenAI token limit exceeded")
+            status_code=413, detail="OpenAI token limit exceeded")
 
     res_content = response.choices[0].message.content
     content = json.loads(res_content)
