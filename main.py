@@ -181,7 +181,11 @@ def chatCompletion(prompt: Annotated[str, Form()], response_type: Annotated[Resp
     }
 
 @app.post("/v2/chat-completion")
-def chatCompletionV2(prompt: Annotated[str, Form()], model_name: Annotated[ModelType, Form()] = ModelType.gpt4omini, file: Annotated[UploadFile | None, File()] = None, sheet_names: Annotated[str | None, Form()] = None, authorization: Annotated[str | None, Header()] = None):
+def chatCompletionV2(prompt: Annotated[str, Form()], model_name: Annotated[ModelType, Form()] = ModelType.gpt4omini, file: Annotated[UploadFile | None, File()] = None, sheet_names: Annotated[str | None, Form()] = None, authorization: Annotated[str | None, Header()] = None, temperature: Annotated[float, Form()] = 0.6):
+    if temperature < 0 or temperature > 2:
+        raise HTTPException(
+            status_code=400, detail="Temperature value is invalid. 0 <= temperature <= 2"
+        )
     if not authorization or (authorization != AUTH_SECRET_KEY):
         print(f"Authorization header: {authorization}")
         raise HTTPException(
@@ -226,7 +230,8 @@ def chatCompletionV2(prompt: Annotated[str, Form()], model_name: Annotated[Model
         response = client.chat.completions.create(
             model=MODEL,
             messages=messages,
-            response_format={"type": "json_object"}
+            response_format={"type": "json_object"},
+            temperature=temperature
         )
     except openai.RateLimitError as e:
         print(f"Rate limit error occurred: {e}")
@@ -258,7 +263,11 @@ def chatCompletionV2(prompt: Annotated[str, Form()], model_name: Annotated[Model
     }
 
 @app.post("/v3/chat-completion")
-def chatCompletionV3(prompt: Annotated[str, Form()], model_name: Annotated[ModelType, Form()] = ModelType.gpt4omini, file: Annotated[UploadFile | None, File()] = None, sheet_names: Annotated[str | None, Form()] = None, authorization: Annotated[str | None, Header()] = None):
+def chatCompletionV3(prompt: Annotated[str, Form()], model_name: Annotated[ModelType, Form()] = ModelType.gpt4omini, file: Annotated[UploadFile | None, File()] = None, sheet_names: Annotated[str | None, Form()] = None, authorization: Annotated[str | None, Header()] = None, temperature: Annotated[float, Form()] = 0.6):
+    if temperature < 0 or temperature > 2:
+        raise HTTPException(
+            status_code=400, detail="Temperature value is invalid. 0 <= temperature <= 2"
+        )
     if not authorization or (authorization != AUTH_SECRET_KEY):
         print(f"Authorization header: {authorization}")
         raise HTTPException(
@@ -310,7 +319,8 @@ def chatCompletionV3(prompt: Annotated[str, Form()], model_name: Annotated[Model
         response = client.chat.completions.create(
             model=MODEL,
             messages=messages,
-            response_format={"type": "json_object"}
+            response_format={"type": "json_object"},
+            temperature=temperature
         )
     except openai.RateLimitError as e:
         print(f"Rate limit error occurred: {e}")
