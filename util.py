@@ -8,6 +8,7 @@ import pandas as pd
 from io import BytesIO
 import pypdfium2 as pdfium
 import os
+import boto3
 
 SUPPORTED_EXTENSIONS = set(
     ['doc', 'dot', 'docx', 'dotx', 'docm', 'dotm', 'pdf', 'png', 'jpeg', 'jpg', 'rtf', 'xlsx', 'xls', 'txt'])
@@ -88,3 +89,19 @@ def parseDocuments(file: UploadFile, sheet_names: str, parseAsImage: bool = Fals
             #     text += f"{' '.join(list(textRow))}\n\n"
             # print(text)
     return [documentText, b64, base64_urls]
+
+BUCKET_NAME = os.getenv("AWS_BUCKET_NAME")
+AWS_REGION = os.getenv("AWS_BUCKET_REGION")
+
+def upload_file(file_path, object_name=None):
+    if object_name is None:
+        object_name = os.path.basename(file_path)
+    response = False
+    s3_client = boto3.client('s3', region_name=AWS_REGION)
+    try:
+        s3_client.upload_file(file_path, BUCKET_NAME, object_name)
+        response = f"https://{BUCKET_NAME}.s3.amazonaws.com/{object_name}"
+    except Exception as e:
+        print("Error while upload:", e)
+        return False
+    return response

@@ -13,11 +13,12 @@ from markdown_pdf import MarkdownPdf, Section
 from striprtf.striprtf import rtf_to_text
 import pandas as pd
 import os
-from .util import parseDocuments
+from .util import parseDocuments, upload_file
 from .system_prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_V2
 import requests
 import json
 from pydantic import BaseModel
+from uuid import uuid4
 
 class ResponseSchema(BaseModel):
     response: str
@@ -240,20 +241,16 @@ def chatCompletionV2(prompt: Annotated[str, Form()], model_name: Annotated[Model
 
     res_content = response.choices[0].message.content
     content = json.loads(res_content)
-    print(content)
     download_link = None
 
     if ("file_response" in content) and content['file_response'] is not None:
         pdf = MarkdownPdf(toc_level=2)
         pdf.add_section(Section(content['file_response']))
         pdf.save(f"response.pdf")
-
-        files=[
-            ('file',('response.pdf',open('response.pdf','rb'),'application/pdf'))
-        ]
-        upload_response = requests.request("POST", "https://tmpfiles.org/api/v1/upload", files=files).json()
-        pdf_url:str = upload_response['data']['url']
-        download_link = "https://tmpfiles.org" + "/dl/" + '/'.join(pdf_url.split("/")[-2:])
+        file_name_s3 = str(uuid4()) + ".pdf"
+        download_link = upload_file('response.pdf', file_name_s3)
+        if not download_link:
+            raise HTTPException("Failed to upload file to S3")
 
     return {
         "status": "success",
@@ -336,13 +333,10 @@ def chatCompletionV3(prompt: Annotated[str, Form()], model_name: Annotated[Model
         pdf = MarkdownPdf(toc_level=2)
         pdf.add_section(Section(content['file_response']))
         pdf.save(f"response.pdf")
-
-        files=[
-            ('file',('response.pdf',open('response.pdf','rb'),'application/pdf'))
-        ]
-        upload_response = requests.request("POST", "https://tmpfiles.org/api/v1/upload", files=files).json()
-        pdf_url:str = upload_response['data']['url']
-        download_link = "https://tmpfiles.org" + "/dl/" + '/'.join(pdf_url.split("/")[-2:])
+        file_name_s3 = str(uuid4()) + ".pdf"
+        download_link = upload_file('response.pdf', file_name_s3)
+        if not download_link:
+            raise HTTPException("Failed to upload file to S3")
 
     return {
         "status": "success",
