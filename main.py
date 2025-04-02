@@ -115,7 +115,11 @@ def chatCompletion(prompt: Annotated[str, Form()], response_type: Annotated[Resp
         elif fileExt == 'txt':
             documentText += file.file.read().decode('utf-8')
         else:
-            document = Document(file.file)
+            try:
+                document = Document(file.file)
+            except Exception as e:
+                print("Something went wrong while parsing the file:", e)
+                raise HTTPException(400, detail="The file could not be parsed")
             for paragraph in document.paragraphs:
                 documentText += paragraph.text if paragraph and paragraph.text else ""
             # text = ''
@@ -136,7 +140,7 @@ def chatCompletion(prompt: Annotated[str, Form()], response_type: Annotated[Resp
     if len(documentText) > 0:
         userContent[0]['text'] = f"User prompt:\n{prompt}\n\nThis is document content: \n{documentText}"
     elif b64 is not None:
-        userContent[0]['text'] = "I will be attaching an image"
+        userContent[0]['text'] = prompt
 
     messages = [
         {
@@ -204,7 +208,7 @@ def chatCompletionV2(prompt: Annotated[str, Form()], model_name: Annotated[Model
     if len(documentText) > 0:
         userContent[0]['text'] = f"User prompt:\n{prompt}\n\nThis is document content: \n{documentText}"
     elif b64 is not None:
-        userContent[0]['text'] = "I will be attaching an image"
+        userContent[0]['text'] = prompt
 
     messages = [
         {
@@ -237,7 +241,7 @@ def chatCompletionV2(prompt: Annotated[str, Form()], model_name: Annotated[Model
     except openai.RateLimitError as e:
         print(f"Rate limit error occurred: {e}")
         raise HTTPException(
-            status_code=413, detail="OpenAI token limit exceeded")
+            status_code=429, detail="OpenAI token limit exceeded")
 
     res_content = response.choices[0].message.content
     content = json.loads(res_content)
@@ -282,7 +286,7 @@ def chatCompletionV3(prompt: Annotated[str, Form()], model_name: Annotated[Model
     if len(documentText) > 0:
         userContent[0]['text'] = f"User prompt:\n{prompt}\n\nThis is document content: \n{documentText}"
     elif b64 is not None:
-        userContent[0]['text'] = "I will be attaching an image"
+        userContent[0]['text'] = prompt
 
     messages = [
         {

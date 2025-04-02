@@ -77,7 +77,11 @@ def parseDocuments(file: UploadFile, sheet_names: str, parseAsImage: bool = Fals
         elif fileExt == 'txt':
             documentText += file.file.read().decode('utf-8')
         else:
-            document = Document(file.file)
+            try:
+                document = Document(file.file)
+            except Exception as e:
+                print("Something went wrong while parsing the file:", e)
+                raise HTTPException(400, detail="The file could not be parsed")
             for paragraph in document.paragraphs:
                 documentText += paragraph.text if paragraph and paragraph.text else ""
             # text = ''
