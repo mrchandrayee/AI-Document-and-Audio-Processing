@@ -13,9 +13,8 @@ from markdown_pdf import MarkdownPdf, Section
 from striprtf.striprtf import rtf_to_text
 import pandas as pd
 import os
-from .util import parseDocuments, upload_file
+from .util import parseDocuments, upload_file, parseDocumentsV2, parseDocumentsWithVector
 from .system_prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_V2
-import requests
 import json
 from pydantic import BaseModel
 from uuid import uuid4
@@ -185,8 +184,197 @@ def chatCompletion(prompt: Annotated[str, Form()], response_type: Annotated[Resp
         "response": response.choices[0].message.content
     }
 
+# With Responses API and no Vector Store
 @app.post("/v2/chat-completion")
 def chatCompletionV2(prompt: Annotated[str, Form()], model_name: Annotated[ModelType, Form()] = ModelType.gpt4omini, file: Annotated[UploadFile | None, File()] = None, sheet_names: Annotated[str | None, Form()] = None, authorization: Annotated[str | None, Header()] = None, temperature: Annotated[float, Form()] = 0.6):
+    if temperature < 0 or temperature > 2:
+        raise HTTPException(
+            status_code=400, detail="Temperature value is invalid. 0 <= temperature <= 2"
+        )
+    if not authorization or (authorization != AUTH_SECRET_KEY):
+        print(f"Authorization header: {authorization}")
+        raise HTTPException(
+            status_code=401, detail="Provide the correct authorization token in headers")
+    
+    MODEL = model_name
+    documentText, b64, pdf_file_id = parseDocumentsV2(file, sheet_names, client=client)
+    userContent = []
+
+    if pdf_file_id:
+        userContent.append({
+            "type": "input_file",
+            "file_id": pdf_file_id,
+        })
+    newPrompt = ""
+    if len(documentText) > 0 and pdf_file_id is None:
+        newPrompt = f"User prompt:\n{prompt}\n\nThis is document content parsed from a file: \n{documentText}"
+    else:
+        newPrompt = prompt
+
+    userContent.append({
+        "type": "input_text",
+        "text": newPrompt,
+    })
+
+    if b64 is not None:
+        userContent.append({
+            "type": "input_image",
+            "image_url": f"data:image/jpeg;base64,{b64}",
+        })
+    
+
+    try:
+        response = client.responses.create(
+            model=MODEL,
+            instructions=SYSTEM_PROMPT_V2,
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": "file_text_response",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "response": {
+                                "type": "string"
+                            },
+                            "file_response": {
+                                "type": "string"
+                            }
+                        },
+                        "required": ["response", "file_response"],
+                        "additionalProperties": False
+                    },
+                    "strict": True
+                }
+            },
+            input=[
+                {
+                    "role": "user",
+                    "content": userContent
+                }
+            ]
+        )
+        content = json.loads(response.output_text)
+    except Exception as e:
+        print(e)
+        raise HTTPException(500, detail=e)
+    
+    download_link = None
+
+    if ("file_response" in content) and content['file_response'] is not None and content['file_response'] != '':
+        pdf = MarkdownPdf(toc_level=2)
+        pdf.add_section(Section(content['file_response']))
+        pdf.save(f"response.pdf")
+        file_name_s3 = str(uuid4()) + ".pdf"
+        download_link = upload_file('response.pdf', file_name_s3)
+        if not download_link:
+            raise HTTPException("Failed to upload file to S3")
+
+    return {
+        "status": "success",
+        "prompt": prompt,
+        "response": content['response'],
+        "pdf": download_link
+    }
+
+# With Responses API and Vector Store
+@app.post("/v3/chat-completion")
+def chatCompletionV3(prompt: Annotated[str, Form()], model_name: Annotated[ModelType, Form()] = ModelType.gpt4omini, file: Annotated[UploadFile | None, File()] = None, sheet_names: Annotated[str | None, Form()] = None, authorization: Annotated[str | None, Header()] = None, temperature: Annotated[float, Form()] = 0.6):
+    if temperature < 0 or temperature > 2:
+        raise HTTPException(
+            status_code=400, detail="Temperature value is invalid. 0 <= temperature <= 2"
+        )
+    if not authorization or (authorization != AUTH_SECRET_KEY):
+        print(f"Authorization header: {authorization}")
+        raise HTTPException(
+            status_code=401, detail="Provide the correct authorization token in headers")
+    
+    MODEL = model_name
+    documentText, b64, vector_store_id = parseDocumentsWithVector(file, sheet_names, client=client)
+    userContent = []
+
+    newPrompt = ""
+    if len(documentText) > 0 and vector_store_id is None:
+        newPrompt = f"User prompt:\n{prompt}\n\nThis is document content parsed from a file: \n{documentText}"
+    else:
+        newPrompt = prompt
+
+    userContent.append({
+        "type": "input_text",
+        "text": newPrompt,
+    })
+
+    if b64 is not None:
+        userContent.append({
+            "type": "input_image",
+            "image_url": f"data:image/jpeg;base64,{b64}",
+        })
+    tools = []
+    if vector_store_id:
+        tools.append({
+            "type": "file_search",
+            "vector_store_ids": [vector_store_id],
+            "max_num_results": 1
+        })
+
+    try:
+        response = client.responses.create(
+            model=MODEL,
+            instructions=SYSTEM_PROMPT_V2,
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": "file_text_response",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "response": {
+                                "type": "string"
+                            },
+                            "file_response": {
+                                "type": "string"
+                            }
+                        },
+                        "required": ["response", "file_response"],
+                        "additionalProperties": False
+                    },
+                    "strict": True
+                }
+            },
+            tools=tools,
+            input=[
+                {
+                    "role": "user",
+                    "content": userContent
+                }
+            ]
+        )
+        print(response.output[-1].content[-1].text)
+        content = json.loads(response.output[-1].content[-1].text)
+    except Exception as e:
+        print(e)
+        raise HTTPException(500, detail=e)
+    
+    download_link = None
+
+    if ("file_response" in content) and content['file_response'] is not None and content['file_response'] != '':
+        pdf = MarkdownPdf(toc_level=2)
+        pdf.add_section(Section(content['file_response']))
+        pdf.save(f"response.pdf")
+        file_name_s3 = str(uuid4()) + ".pdf"
+        download_link = upload_file('response.pdf', file_name_s3)
+        if not download_link:
+            raise HTTPException("Failed to upload file to S3")
+
+    return {
+        "status": "success",
+        "prompt": prompt,
+        "response": content['response'],
+        "pdf": download_link
+    }
+
+@app.post("/v4/chat-completion")
+def chatCompletionV4(prompt: Annotated[str, Form()], model_name: Annotated[ModelType, Form()] = ModelType.gpt4omini, file: Annotated[UploadFile | None, File()] = None, sheet_names: Annotated[str | None, Form()] = None, authorization: Annotated[str | None, Header()] = None, temperature: Annotated[float, Form()] = 0.6):
     if temperature < 0 or temperature > 2:
         raise HTTPException(
             status_code=400, detail="Temperature value is invalid. 0 <= temperature <= 2"
@@ -263,8 +451,8 @@ def chatCompletionV2(prompt: Annotated[str, Form()], model_name: Annotated[Model
         "pdf": download_link
     }
 
-@app.post("/v3/chat-completion")
-def chatCompletionV3(prompt: Annotated[str, Form()], model_name: Annotated[ModelType, Form()] = ModelType.gpt4omini, file: Annotated[UploadFile | None, File()] = None, sheet_names: Annotated[str | None, Form()] = None, authorization: Annotated[str | None, Header()] = None, temperature: Annotated[float, Form()] = 0.6):
+@app.post("/v5/chat-completion")
+def chatCompletionV5(prompt: Annotated[str, Form()], model_name: Annotated[ModelType, Form()] = ModelType.gpt4omini, file: Annotated[UploadFile | None, File()] = None, sheet_names: Annotated[str | None, Form()] = None, authorization: Annotated[str | None, Header()] = None, temperature: Annotated[float, Form()] = 0.6):
     if temperature < 0 or temperature > 2:
         raise HTTPException(
             status_code=400, detail="Temperature value is invalid. 0 <= temperature <= 2"
