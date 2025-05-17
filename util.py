@@ -12,7 +12,8 @@ import boto3
 from openai import OpenAI
 
 SUPPORTED_EXTENSIONS = set(
-    ['doc', 'dot', 'docx', 'dotx', 'docm', 'dotm', 'pdf', 'png', 'jpeg', 'jpg', 'rtf', 'xlsx', 'xls', 'txt'])
+    ['doc', 'dot', 'docx', 'dotx', 'docm', 'dotm', 'pdf', 'png', 'jpeg', 'jpg', 'rtf', 'xlsx', 'xls', 'txt',
+     'mp3', 'wav', 'ogg', 'm4a', 'flac'])  # Added audio file extensions
 
 def parseDocuments(file: UploadFile, sheet_names: str, parseAsImage: bool = False):
     documentText = ''

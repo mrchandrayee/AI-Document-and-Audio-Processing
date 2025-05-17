@@ -15,6 +15,7 @@ import pandas as pd
 import os
 from .util import parseDocuments, upload_file, parseDocumentsV2, parseDocumentsWithVector
 from .system_prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_V2
+from .whisper_service import WhisperService
 import json
 from pydantic import BaseModel
 from uuid import uuid4
@@ -47,7 +48,8 @@ class ModelType(str, Enum):
 
 MODEL = 'gpt-4o'
 SUPPORTED_EXTENSIONS = set(
-    ['doc', 'dot', 'docx', 'dotx', 'docm', 'dotm', 'pdf', 'png', 'jpeg', 'jpg', 'rtf', 'xlsx', 'xls', 'txt'])
+    ['doc', 'dot', 'docx', 'dotx', 'docm', 'dotm', 'pdf', 'png', 'jpeg', 'jpg', 'rtf', 'xlsx', 'xls', 'txt',
+     'mp3', 'wav', 'ogg', 'm4a', 'flac'])  # Added audio file extensions
 
 # Health checkup end point
 @app.get("/")
@@ -536,3 +538,133 @@ def chatCompletionV5(prompt: Annotated[str, Form()], model_name: Annotated[Model
         "response": content['response'],
         "pdf": download_link
     }
+
+# Audio transcription endpoint with noise removal and forced English transcription
+@app.post("/audio-transcription")
+def audioTranscription(
+    file: Annotated[UploadFile, File()],
+    remove_noise: Annotated[bool, Form()] = True,
+    force_english: Annotated[bool, Form()] = True,
+    authorization: Annotated[str | None, Header()] = None
+):
+    """
+    Transcribe audio using Whisper model with optimizations.
+    
+    Parameters:
+    - file: Audio file (mp3, wav, ogg, m4a, flac)
+    - remove_noise: Whether to apply noise removal (default: True)
+    - force_english: Whether to force English transcription (default: True)
+    
+    Returns:
+    - JSON with transcription results
+    """
+    if not authorization or (authorization != AUTH_SECRET_KEY):
+        raise HTTPException(
+            status_code=401, detail="Provide the correct authorization token in headers")
+    
+    # Check file extension
+    fileExt = file.filename.split('.')[-1].lower()
+    if fileExt not in ['mp3', 'wav', 'ogg', 'm4a', 'flac']:
+        raise HTTPException(400, f"{fileExt} file type not supported for audio transcription")
+    
+    try:
+        # Initialize Whisper service with OpenAI client
+        whisper_service = WhisperService(client=client)
+        
+        # Transcribe the audio file
+        transcription = whisper_service.transcribe_audio_file(
+            file, 
+            remove_noise=remove_noise, 
+            force_english=force_english
+        )
+        
+        return {
+            "status": "success",
+            "transcription": transcription,
+            "optimizations": {
+                "noise_removal": remove_noise,
+                "forced_english": force_english
+            }
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error transcribing audio: {str(e)}")
+
+# Combined audio transcription and analysis with GPT
+@app.post("/audio-analysis")
+def audioAnalysis(
+    file: Annotated[UploadFile, File()],
+    prompt: Annotated[str, Form()],
+    remove_noise: Annotated[bool, Form()] = True,
+    force_english: Annotated[bool, Form()] = True,
+    model_name: Annotated[ModelType, Form()] = ModelType.gpt4omini,
+    authorization: Annotated[str | None, Header()] = None
+):
+    """
+    Transcribe audio using Whisper with optimizations and analyze with GPT.
+    
+    Parameters:
+    - file: Audio file (mp3, wav, ogg, m4a, flac)
+    - prompt: User prompt for analysis of the transcription
+    - remove_noise: Whether to apply noise removal (default: True)
+    - force_english: Whether to force English transcription (default: True)
+    - model_name: GPT model to use for analysis (default: gpt-4o-mini)
+    
+    Returns:
+    - JSON with transcription and analysis results
+    """
+    if not authorization or (authorization != AUTH_SECRET_KEY):
+        raise HTTPException(
+            status_code=401, detail="Provide the correct authorization token in headers")
+    
+    # Check file extension
+    fileExt = file.filename.split('.')[-1].lower()
+    if fileExt not in ['mp3', 'wav', 'ogg', 'm4a', 'flac']:
+        raise HTTPException(400, f"{fileExt} file type not supported for audio transcription")
+    
+    try:
+        # Initialize Whisper service with OpenAI client
+        whisper_service = WhisperService(client=client)
+        
+        # Transcribe the audio file
+        transcription = whisper_service.transcribe_audio_file(
+            file, 
+            remove_noise=remove_noise, 
+            force_english=force_english
+        )
+        
+        # Prepare messages for GPT analysis
+        messages = [
+            {
+                "role": "system",
+                "content": AUDIO_TRANSCRIPTION_PROMPT
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": f"User prompt: {prompt}\n\nAudio Transcription:\n{transcription}\n\nOptimizations applied:\nNoise Removal: {remove_noise}\nForced English: {force_english}"
+                    }
+                ]
+            }
+        ]
+        
+        # Get GPT analysis
+        response = client.chat.completions.create(
+            model=model_name,
+            messages=messages
+        )
+        
+        return {
+            "status": "success",
+            "transcription": transcription,
+            "analysis": response.choices[0].message.content,
+            "optimizations": {
+                "noise_removal": remove_noise,
+                "forced_english": force_english
+            }
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing audio: {str(e)}")
