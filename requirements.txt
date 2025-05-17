@@ -11,7 +11,7 @@ requests
 striprtf
 fastapi-cli
 python-multipart
-xlrd1
+xlrd
 openpyxl
 boto3
 uuid
