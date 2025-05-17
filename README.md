@@ -257,9 +257,3 @@ A powerful new endpoint for batch processing:
   - Maximum number of files per archive: 20
 
 ---
-
-<div align="center">
-  <p>📱 <b>Contact the Developers</b> 📱</p>
-  <p>Questions or feature requests? We'd love to hear from you!</p>
-  <p>Made with ❤️ by the AI Processing Team</p>
-</div>
