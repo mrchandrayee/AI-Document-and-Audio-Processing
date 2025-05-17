@@ -242,18 +242,4 @@ Powerful GPT-based processing for:
 
 </div>
 
-## 🔮 Future Development
 
-<div align="center">
-  <img src="https://img.shields.io/badge/Coming_Soon-34D399?style=for-the-badge" alt="Coming Soon" />
-</div>
-
-### 📦 Zip File Processing API
-A powerful new endpoint for batch processing:
-- Upload a single zip archive containing multiple files
-- Receive individual summaries for each enclosed document
-- **Limitations:**
-  - Maximum zip file size: 20MB
-  - Maximum number of files per archive: 20
-
----
