@@ -19,3 +19,4 @@ librosa
 soundfile
 numpy
 scipy
+uvicorn

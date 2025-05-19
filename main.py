@@ -13,9 +13,9 @@ from markdown_pdf import MarkdownPdf, Section
 from striprtf.striprtf import rtf_to_text
 import pandas as pd
 import os
-from .util import parseDocuments, upload_file, parseDocumentsV2, parseDocumentsWithVector
-from .system_prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_V2
-from .whisper_service import WhisperService
+from util import parseDocuments, upload_file, parseDocumentsV2, parseDocumentsWithVector
+from system_prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_V2, AUDIO_TRANSCRIPTION_PROMPT
+from whisper_service import WhisperService
 import json
 from pydantic import BaseModel
 from uuid import uuid4
@@ -539,7 +539,7 @@ def chatCompletionV5(prompt: Annotated[str, Form()], model_name: Annotated[Model
     }
 
 # Audio transcription endpoint with noise removal and forced English transcription
-@app.post("/audio-transcription")
+@app.post("/v6/audio-transcription")
 def audioTranscription(
     file: Annotated[UploadFile, File()],
     remove_noise: Annotated[bool, Form()] = True,
@@ -590,7 +590,7 @@ def audioTranscription(
         raise HTTPException(status_code=500, detail=f"Error transcribing audio: {str(e)}")
 
 # Combined audio transcription and analysis with GPT
-@app.post("/audio-analysis")
+@app.post("/v7/audio-analysis")
 def audioAnalysis(
     file: Annotated[UploadFile, File()],
     prompt: Annotated[str, Form()],
