@@ -47,9 +47,16 @@ class ModelType(str, Enum):
     gpt4omini = "gpt-4o-mini"
 
 MODEL = 'gpt-4o'
-SUPPORTED_EXTENSIONS = set(
-    ['doc', 'dot', 'docx', 'dotx', 'docm', 'dotm', 'pdf', 'png', 'jpeg', 'jpg', 'rtf', 'xlsx', 'xls', 'txt',
-     'mp3', 'wav', 'ogg', 'm4a', 'flac'])  # Added audio file extensions
+# Document formats
+DOC_EXTENSIONS = ['doc', 'dot', 'docx', 'dotx', 'docm', 'dotm', 'pdf', 'rtf', 'xlsx', 'xls', 'txt']
+# Image formats
+IMAGE_EXTENSIONS = ['png', 'jpeg', 'jpg']
+# Audio formats
+AUDIO_EXTENSIONS = ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac', 'wma', 'aiff', 'alac']
+# Video formats (for audio extraction)
+VIDEO_EXTENSIONS = ['mp4', 'avi', 'mov', 'mkv', 'webm', 'wmv', 'flv', 'mpeg']
+# All supported formats
+SUPPORTED_EXTENSIONS = set(DOC_EXTENSIONS + IMAGE_EXTENSIONS + AUDIO_EXTENSIONS + VIDEO_EXTENSIONS)
 
 # Health checkup end point
 @app.get("/")
@@ -550,7 +557,7 @@ def audioTranscription(
     Transcribe audio using Whisper model with optimizations.
     
     Parameters:
-    - file: Audio file (mp3, wav, ogg, m4a, flac)
+    - file: Media file (audio formats like mp3, wav, ogg, m4a, flac, or video formats if ffmpeg is available)
     - remove_noise: Whether to apply noise removal (default: True)
     - force_english: Whether to force English transcription (default: True)
     
@@ -563,8 +570,9 @@ def audioTranscription(
     
     # Check file extension
     fileExt = file.filename.split('.')[-1].lower()
-    if fileExt not in ['mp3', 'wav', 'ogg', 'm4a', 'flac']:
-        raise HTTPException(400, f"{fileExt} file type not supported for audio transcription")
+    if fileExt not in AUDIO_EXTENSIONS and fileExt not in VIDEO_EXTENSIONS:
+        supported_formats = ", ".join(AUDIO_EXTENSIONS + VIDEO_EXTENSIONS)
+        raise HTTPException(400, f"{fileExt} file type not supported for audio transcription. Supported formats: {supported_formats}")
     
     try:
         # Initialize Whisper service with OpenAI client
@@ -591,10 +599,10 @@ def audioTranscription(
 
 # Combined audio transcription and analysis with GPT
 @app.post("/v7/audio-analysis")
-def audioAnalysis(
-    file: Annotated[UploadFile, File()],
-    prompt: Annotated[str, Form()],
-    remove_noise: Annotated[bool, Form()] = True,
+async def audio_analysis(
+    file: Annotated[UploadFile, File()], 
+    prompt: Annotated[str, Form()] = "", 
+    remove_noise: Annotated[bool, Form()] = True, 
     force_english: Annotated[bool, Form()] = True,
     model_name: Annotated[ModelType, Form()] = ModelType.gpt4omini,
     authorization: Annotated[str | None, Header()] = None
@@ -603,7 +611,7 @@ def audioAnalysis(
     Transcribe audio using Whisper with optimizations and analyze with GPT.
     
     Parameters:
-    - file: Audio file (mp3, wav, ogg, m4a, flac)
+    - file: Media file containing audio (supports audio formats like mp3, wav, flac and video formats like mp4, avi if ffmpeg is available)
     - prompt: User prompt for analysis of the transcription
     - remove_noise: Whether to apply noise removal (default: True)
     - force_english: Whether to force English transcription (default: True)
@@ -618,19 +626,70 @@ def audioAnalysis(
     
     # Check file extension
     fileExt = file.filename.split('.')[-1].lower()
-    if fileExt not in ['mp3', 'wav', 'ogg', 'm4a', 'flac']:
-        raise HTTPException(400, f"{fileExt} file type not supported for audio transcription")
+    if fileExt not in AUDIO_EXTENSIONS and fileExt not in VIDEO_EXTENSIONS:
+        supported_formats = ", ".join(AUDIO_EXTENSIONS + VIDEO_EXTENSIONS)
+        raise HTTPException(400, f"{fileExt} file type not supported for audio transcription. Supported formats: {supported_formats}")
+    
+    # Check file size
+    file_content = await file.read()
+    file_size_mb = len(file_content) / (1024 * 1024)
+    print(f"Received audio file: {file.filename}, size: {file_size_mb:.2f} MB")
+    
+    # Reset file pointer
+    await file.seek(0)
+    
+    # For very large files, warn the client
+    if file_size_mb > 50:
+        print(f"Warning: Processing very large audio file ({file_size_mb:.2f} MB)")
     
     try:
         # Initialize Whisper service with OpenAI client
         whisper_service = WhisperService(client=client)
         
-        # Transcribe the audio file
-        transcription = whisper_service.transcribe_audio_file(
-            file, 
-            remove_noise=remove_noise, 
-            force_english=force_english
-        )
+        # Save to a temporary file first, so we can retry if needed
+        temp_dir = tempfile.mkdtemp()
+        temp_path = os.path.join(temp_dir, file.filename)
+        
+        with open(temp_path, "wb") as buffer:
+            buffer.write(file_content)
+        
+        try:
+            # Try with original settings first
+            transcription = whisper_service.transcribe_audio(
+                temp_path, 
+                remove_noise=remove_noise, 
+                force_english=force_english
+            )
+        except Exception as e:
+            print(f"First transcription attempt failed: {e}")
+            
+            # If that fails, try with noise removal disabled
+            try:
+                transcription = whisper_service.transcribe_audio(
+                    temp_path,
+                    remove_noise=False,
+                    force_english=force_english
+                )
+            except Exception as e:
+                # If we're out of memory, clean up immediately
+                if "Unable to allocate" in str(e) or "MemoryError" in str(e):
+                    # Clean up temporary files
+                    try:
+                        os.remove(temp_path)
+                        os.rmdir(temp_dir)
+                    except:
+                        pass
+                raise HTTPException(
+                    status_code=413, 
+                    detail=f"Error processing audio: {str(e)}. Try with a shorter audio file."
+                )
+        
+        # Clean up temporary file now that we have the transcription
+        try:
+            os.remove(temp_path)
+            os.rmdir(temp_dir)
+        except:
+            pass
         
         # Prepare messages for GPT analysis
         messages = [
@@ -665,5 +724,11 @@ def audioAnalysis(
             }
         }
     
+    except HTTPException as e:
+        # Re-raise HTTP exceptions
+        raise
     except Exception as e:
+        import traceback
+        print(f"Error processing audio: {str(e)}")
+        print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Error processing audio: {str(e)}")

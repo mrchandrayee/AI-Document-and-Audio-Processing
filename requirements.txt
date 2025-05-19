@@ -17,6 +17,11 @@ boto3
 uuid
 librosa
 soundfile
+audioread
+pysoundfile
 numpy
 scipy
 uvicorn
+ffmpeg-python
+moviepy
+pydub

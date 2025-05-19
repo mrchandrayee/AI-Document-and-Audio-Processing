@@ -29,13 +29,12 @@ A powerful, scalable API for intelligent document and audio processing, leveragi
 ### 🔊 Audio Processing
 - **Advanced Transcription:**
   - High-accuracy audio transcription with OpenAI Whisper
-  - Smart optimization for clear results
-- **Intelligent Audio Analysis:**
-  - Contextual understanding with GPT
-  - Detailed insights from spoken content
-- **Audio Enhancement:**
-  - 🔇 Background noise removal
-  - 🌍 Cross-language support with forced English translation
+  - Support for a wide range of audio formats: MP3, WAV, OGG, M4A, FLAC, AAC, WMA, AIFF, ALAC
+  - **Video audio extraction:** Extract and transcribe audio from video files (MP4, AVI, MOV, MKV, WEBM)
+- **Audio Analysis:**
+  - Noise removal and audio enhancement
+  - Intelligent analysis of transcripts
+  - Memory-efficient processing of large files
 
 ## 🛠️ Setup and Configuration
 
