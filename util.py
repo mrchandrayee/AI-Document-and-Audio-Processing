@@ -237,13 +237,17 @@ BUCKET_NAME = os.getenv("AWS_BUCKET_NAME")
 AWS_REGION = os.getenv("AWS_BUCKET_REGION")
 
 def upload_file(file_path, object_name=None):
+    print("Bucket:", os.getenv("AWS_BUCKET_NAME"))
+    print("Region:", os.getenv("AWS_BUCKET_REGION"))
+    print("Access key:", os.getenv("AWS_ACCESS_KEY_ID"))
     if object_name is None:
         object_name = os.path.basename(file_path)
     response = False
     s3_client = boto3.client('s3', region_name=AWS_REGION)
     try:
-        s3_client.upload_file(file_path, BUCKET_NAME, object_name)
-        response = f"https://{BUCKET_NAME}.s3.amazonaws.com/{object_name}"
+        response = "www.google.com"
+        #s3_client.upload_file(file_path, BUCKET_NAME, object_name)
+        #response = f"https://{BUCKET_NAME}.s3.amazonaws.com/{object_name}"
     except Exception as e:
         print("Error while upload:", e)
         return False

@@ -197,7 +197,6 @@ def chatCompletionV2(prompt: Annotated[str, Form()], model_name: Annotated[Model
         print(f"Authorization header: {authorization}")
         raise HTTPException(
             status_code=401, detail="Provide the correct authorization token in headers")
-    
     MODEL = model_name
     documentText, b64, pdf_file_id = parseDocumentsV2(file, sheet_names, client=client)
     userContent = []
@@ -270,7 +269,7 @@ def chatCompletionV2(prompt: Annotated[str, Form()], model_name: Annotated[Model
         file_name_s3 = str(uuid4()) + ".pdf"
         download_link = upload_file('response.pdf', file_name_s3)
         if not download_link:
-            raise HTTPException("Failed to upload file to S3")
+            raise HTTPException(status_code = 500,detail="Failed to upload file to S3")
 
     return {
         "status": "success",
