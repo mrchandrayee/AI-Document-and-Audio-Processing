@@ -1,4 +1,4 @@
-FROM python:3.13.2-bullseye
+FROM python:3.12-bullseye
 
 # Install system dependencies for audio processing
 RUN apt-get update && apt-get install -y \

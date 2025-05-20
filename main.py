@@ -545,62 +545,11 @@ def chatCompletionV5(prompt: Annotated[str, Form()], model_name: Annotated[Model
         "pdf": download_link
     }
 
-# Audio transcription endpoint with noise removal and forced English transcription
-@app.post("/v6/audio-transcription")
-def audioTranscription(
+# Unified audio processing endpoint with optional analysis
+@app.post("/v6/audio-processing")
+async def audio_processing(
     file: Annotated[UploadFile, File()],
-    remove_noise: Annotated[bool, Form()] = True,
-    force_english: Annotated[bool, Form()] = True,
-    authorization: Annotated[str | None, Header()] = None
-):
-    """
-    Transcribe audio using Whisper model with optimizations.
-    
-    Parameters:
-    - file: Media file (audio formats like mp3, wav, ogg, m4a, flac, or video formats if ffmpeg is available)
-    - remove_noise: Whether to apply noise removal (default: True)
-    - force_english: Whether to force English transcription (default: True)
-    
-    Returns:
-    - JSON with transcription results
-    """
-    if not authorization or (authorization != AUTH_SECRET_KEY):
-        raise HTTPException(
-            status_code=401, detail="Provide the correct authorization token in headers")
-    
-    # Check file extension
-    fileExt = file.filename.split('.')[-1].lower()
-    if fileExt not in AUDIO_EXTENSIONS and fileExt not in VIDEO_EXTENSIONS:
-        supported_formats = ", ".join(AUDIO_EXTENSIONS + VIDEO_EXTENSIONS)
-        raise HTTPException(400, f"{fileExt} file type not supported for audio transcription. Supported formats: {supported_formats}")
-    
-    try:
-        # Initialize Whisper service with OpenAI client
-        whisper_service = WhisperService(client=client)
-        
-        # Transcribe the audio file
-        transcription = whisper_service.transcribe_audio_file(
-            file, 
-            remove_noise=remove_noise, 
-            force_english=force_english
-        )
-        
-        return {
-            "status": "success",
-            "transcription": transcription,
-            "optimizations": {
-                "noise_removal": remove_noise,
-                "forced_english": force_english
-            }
-        }
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error transcribing audio: {str(e)}")
-
-# Combined audio transcription and analysis with GPT
-@app.post("/v7/audio-analysis")
-async def audio_analysis(
-    file: Annotated[UploadFile, File()], 
+    analyze: Annotated[bool, Form()] = False,
     prompt: Annotated[str, Form()] = "", 
     remove_noise: Annotated[bool, Form()] = True, 
     force_english: Annotated[bool, Form()] = True,
@@ -608,17 +557,18 @@ async def audio_analysis(
     authorization: Annotated[str | None, Header()] = None
 ):
     """
-    Transcribe audio using Whisper with optimizations and analyze with GPT.
+    Unified endpoint for audio processing - handles both transcription and optional GPT analysis.
     
     Parameters:
-    - file: Media file containing audio (supports audio formats like mp3, wav, flac and video formats like mp4, avi if ffmpeg is available)
-    - prompt: User prompt for analysis of the transcription
+    - file: Media file (audio formats like mp3, wav, ogg, m4a, flac, or video formats if ffmpeg is available)
+    - analyze: Whether to perform GPT analysis on the transcription (default: False)
+    - prompt: User prompt for analysis of the transcription (only used if analyze=True)
     - remove_noise: Whether to apply noise removal (default: True)
     - force_english: Whether to force English transcription (default: True)
-    - model_name: GPT model to use for analysis (default: gpt-4o-mini)
+    - model_name: GPT model to use for analysis (default: gpt-4o-mini, only used if analyze=True)
     
     Returns:
-    - JSON with transcription and analysis results
+    - JSON with transcription and optional analysis results
     """
     if not authorization or (authorization != AUTH_SECRET_KEY):
         raise HTTPException(
@@ -630,7 +580,7 @@ async def audio_analysis(
         supported_formats = ", ".join(AUDIO_EXTENSIONS + VIDEO_EXTENSIONS)
         raise HTTPException(400, f"{fileExt} file type not supported for audio transcription. Supported formats: {supported_formats}")
     
-    # Check file size
+    # Check file size and read content
     file_content = await file.read()
     file_size_mb = len(file_content) / (1024 * 1024)
     print(f"Received audio file: {file.filename}, size: {file_size_mb:.2f} MB")
@@ -638,7 +588,7 @@ async def audio_analysis(
     # Reset file pointer
     await file.seek(0)
     
-    # For very large files, warn the client
+    # For very large files, warn in logs
     if file_size_mb > 50:
         print(f"Warning: Processing very large audio file ({file_size_mb:.2f} MB)")
     
@@ -646,7 +596,7 @@ async def audio_analysis(
         # Initialize Whisper service with OpenAI client
         whisper_service = WhisperService(client=client)
         
-        # Save to a temporary file first, so we can retry if needed
+        # Use the more robust approach from v7 for all transcriptions
         temp_dir = tempfile.mkdtemp()
         temp_path = os.path.join(temp_dir, file.filename)
         
@@ -690,39 +640,46 @@ async def audio_analysis(
             os.rmdir(temp_dir)
         except:
             pass
-        
-        # Prepare messages for GPT analysis
-        messages = [
-            {
-                "role": "system",
-                "content": AUDIO_TRANSCRIPTION_PROMPT
-            },
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": f"User prompt: {prompt}\n\nAudio Transcription:\n{transcription}\n\nOptimizations applied:\nNoise Removal: {remove_noise}\nForced English: {force_english}"
-                    }
-                ]
-            }
-        ]
-        
-        # Get GPT analysis
-        response = client.chat.completions.create(
-            model=model_name,
-            messages=messages
-        )
-        
-        return {
+            
+        # Basic response with just the transcription
+        response_data = {
             "status": "success",
             "transcription": transcription,
-            "analysis": response.choices[0].message.content,
             "optimizations": {
                 "noise_removal": remove_noise,
                 "forced_english": force_english
             }
         }
+        
+        # If analysis is requested, add GPT analysis to the response
+        if analyze:
+            # Prepare messages for GPT analysis
+            messages = [
+                {
+                    "role": "system",
+                    "content": AUDIO_TRANSCRIPTION_PROMPT
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": f"User prompt: {prompt}\n\nAudio Transcription:\n{transcription}\n\nOptimizations applied:\nNoise Removal: {remove_noise}\nForced English: {force_english}"
+                        }
+                    ]
+                }
+            ]
+            
+            # Get GPT analysis
+            gpt_response = client.chat.completions.create(
+                model=model_name,
+                messages=messages
+            )
+            
+            # Add analysis to response
+            response_data["analysis"] = gpt_response.choices[0].message.content
+        
+        return response_data
     
     except HTTPException as e:
         # Re-raise HTTP exceptions
