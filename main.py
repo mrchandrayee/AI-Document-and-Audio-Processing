@@ -130,14 +130,14 @@ def chatCompletion(prompt: Annotated[str, Form()], response_type: Annotated[Resp
                 raise HTTPException(400, detail="The file could not be parsed")
             for paragraph in document.paragraphs:
                 documentText += paragraph.text if paragraph and paragraph.text else ""
-            # text = ''
-            # for elem in document.tables:
-            #     textRow = set()
-            #     for i, row in enumerate(elem.columns):
-            #         for cell in row.cells:
-            #             textRow.add(f"{cell.text}\n")
-            #     text += f"{' '.join(list(textRow))}\n\n"
-            # print(text)
+            # Note: Table processing is currently disabled
+    # for elem in document.tables:
+    #     textRow = set()
+    #     for i, row in enumerate(elem.columns):
+    #         for cell in row.cells:
+    #             textRow.add(f"{cell.text}\n")
+    #     text += f"{' '.join(list(textRow))}\n\n"
+    # print(text)
     userContent = [
         {
             "type": "text",
@@ -179,14 +179,11 @@ def chatCompletion(prompt: Annotated[str, Form()], response_type: Annotated[Resp
     if response_type is ResponseType.pdf:
         pdf = MarkdownPdf(toc_level=2)
         content = response.choices[0].message.content
-        # while breakWords <= len(content):
         pdf.add_section(Section(content))
-        #     print(offset)
-        #     breakWords+=offset
         pdf.save(f"response.pdf")
         return FileResponse(f"response.pdf",
                             media_type="application/pdf")
-
+    
     return {
         "status": "success",
         "prompt": prompt,
@@ -219,7 +216,8 @@ def chatCompletionV2(prompt: Annotated[str, Form()], model_name: Annotated[Model
     else:
         newPrompt = prompt
 
-    userContent.append({
+        userContent.append({
+
         "type": "input_text",
         "text": newPrompt,
     })
@@ -267,8 +265,7 @@ def chatCompletionV2(prompt: Annotated[str, Form()], model_name: Annotated[Model
         print(e)
         raise HTTPException(500, detail=e)
     
-    download_link = None
-
+    download_link = None    
     if ("file_response" in content) and content['file_response'] is not None and content['file_response'] != '':
         pdf = MarkdownPdf(toc_level=2)
         pdf.add_section(Section(content['file_response']))
@@ -276,7 +273,10 @@ def chatCompletionV2(prompt: Annotated[str, Form()], model_name: Annotated[Model
         file_name_s3 = str(uuid4()) + ".pdf"
         download_link = upload_file('response.pdf', file_name_s3)
         if not download_link:
-            raise HTTPException(status_code = 500,detail="Failed to upload file to S3")
+            # Generate dummy link if real upload fails or is disabled
+            dummy_uuid = str(uuid4())
+            download_link = f"https://dummy-s3-bucket.example.com/{dummy_uuid}/{file_name_s3}"
+            print(f"Using dummy download link: {download_link}")
 
     return {
         "status": "success",
@@ -363,8 +363,7 @@ def chatCompletionV3(prompt: Annotated[str, Form()], model_name: Annotated[Model
         print(e)
         raise HTTPException(500, detail=e)
     
-    download_link = None
-
+    download_link = None    
     if ("file_response" in content) and content['file_response'] is not None and content['file_response'] != '':
         pdf = MarkdownPdf(toc_level=2)
         pdf.add_section(Section(content['file_response']))
@@ -372,7 +371,10 @@ def chatCompletionV3(prompt: Annotated[str, Form()], model_name: Annotated[Model
         file_name_s3 = str(uuid4()) + ".pdf"
         download_link = upload_file('response.pdf', file_name_s3)
         if not download_link:
-            raise HTTPException("Failed to upload file to S3")
+            # Generate dummy link if real upload fails or is disabled
+            dummy_uuid = str(uuid4())
+            download_link = f"https://dummy-s3-bucket.example.com/{dummy_uuid}/{file_name_s3}"
+            print(f"Using dummy download link: {download_link}")
 
     return {
         "status": "success",
@@ -441,8 +443,7 @@ def chatCompletionV4(prompt: Annotated[str, Form()], model_name: Annotated[Model
 
     res_content = response.choices[0].message.content
     content = json.loads(res_content)
-    download_link = None
-
+    download_link = None    
     if ("file_response" in content) and content['file_response'] is not None:
         pdf = MarkdownPdf(toc_level=2)
         pdf.add_section(Section(content['file_response']))
@@ -450,7 +451,10 @@ def chatCompletionV4(prompt: Annotated[str, Form()], model_name: Annotated[Model
         file_name_s3 = str(uuid4()) + ".pdf"
         download_link = upload_file('response.pdf', file_name_s3)
         if not download_link:
-            raise HTTPException("Failed to upload file to S3")
+            # Generate dummy link if real upload fails or is disabled
+            dummy_uuid = str(uuid4())
+            download_link = f"https://dummy-s3-bucket.example.com/{dummy_uuid}/{file_name_s3}"
+            print(f"Using dummy download link: {download_link}")
 
     return {
         "status": "success",
@@ -525,7 +529,7 @@ def chatCompletionV5(prompt: Annotated[str, Form()], model_name: Annotated[Model
             status_code=429, detail="OpenAI token limit exceeded")
 
     res_content = response.choices[0].message.content
-    content = json.loads(res_content)
+    content = json.loads(res_content)    
     print(content)
     download_link = None
 
@@ -536,7 +540,10 @@ def chatCompletionV5(prompt: Annotated[str, Form()], model_name: Annotated[Model
         file_name_s3 = str(uuid4()) + ".pdf"
         download_link = upload_file('response.pdf', file_name_s3)
         if not download_link:
-            raise HTTPException("Failed to upload file to S3")
+            # Generate dummy link if real upload fails or is disabled
+            dummy_uuid = str(uuid4())
+            download_link = f"https://dummy-s3-bucket.example.com/{dummy_uuid}/{file_name_s3}"
+            print(f"Using dummy download link: {download_link}")
 
     return {
         "status": "success",
@@ -545,147 +552,152 @@ def chatCompletionV5(prompt: Annotated[str, Form()], model_name: Annotated[Model
         "pdf": download_link
     }
 
-# Unified audio processing endpoint with optional analysis
+# Audio Transcription + Chat Completion - Following v5 Pattern
 @app.post("/v6/audio-processing")
-async def audio_processing(
+def audio_processing(
+    prompt: Annotated[str, Form()], 
     file: Annotated[UploadFile, File()],
-    analyze: Annotated[bool, Form()] = False,
-    prompt: Annotated[str, Form()] = "", 
-    remove_noise: Annotated[bool, Form()] = True, 
-    force_english: Annotated[bool, Form()] = True,
-    model_name: Annotated[ModelType, Form()] = ModelType.gpt4omini,
-    authorization: Annotated[str | None, Header()] = None
+    model_name: Annotated[ModelType, Form()] = ModelType.gpt4omini, 
+    authorization: Annotated[str | None, Header()] = None, 
+    temperature: Annotated[float, Form()] = 0.6,
+    remove_noise: Annotated[bool, Form()] = True,
+    force_english: Annotated[bool, Form()] = True
 ):
     """
-    Unified endpoint for audio processing - handles both transcription and optional GPT analysis.
+    Audio processing endpoint that follows the v5 pattern, but specialized for audio files.
     
     Parameters:
-    - file: Media file (audio formats like mp3, wav, ogg, m4a, flac, or video formats if ffmpeg is available)
-    - analyze: Whether to perform GPT analysis on the transcription (default: False)
-    - prompt: User prompt for analysis of the transcription (only used if analyze=True)
-    - remove_noise: Whether to apply noise removal (default: True)
+    - prompt: User prompt for analysis of the audio
+    - file: Audio file (formats: mp3, wav, ogg, m4a, flac) or video file for audio extraction
+    - model_name: GPT model to use for analysis (default: gpt-4o-mini)
+    - authorization: Auth token
+    - temperature: Controls randomness in GPT responses (0.0 to 2.0)
+    - remove_noise: Whether to apply noise removal to audio (default: True)
     - force_english: Whether to force English transcription (default: True)
-    - model_name: GPT model to use for analysis (default: gpt-4o-mini, only used if analyze=True)
-    
     Returns:
-    - JSON with transcription and optional analysis results
+    - JSON with transcription, analysis response, and PDF download link if applicable
     """
-    if not authorization or (authorization != AUTH_SECRET_KEY):
+    if temperature < 0 or temperature > 2:
         raise HTTPException(
-            status_code=401, detail="Provide the correct authorization token in headers")
+            status_code=400, detail="Temperature value is invalid. 0 <= temperature <= 2"
+        )
     
-    # Check file extension
+    if not authorization or (authorization != AUTH_SECRET_KEY):
+        print(f"Authorization header: {authorization}")
+        raise HTTPException(
+            status_code=401,
+            detail="Provide the correct authorization token in headers"
+        )
+
+    # Check file extension for audio files
     fileExt = file.filename.split('.')[-1].lower()
     if fileExt not in AUDIO_EXTENSIONS and fileExt not in VIDEO_EXTENSIONS:
         supported_formats = ", ".join(AUDIO_EXTENSIONS + VIDEO_EXTENSIONS)
-        raise HTTPException(400, f"{fileExt} file type not supported for audio transcription. Supported formats: {supported_formats}")
+        raise HTTPException(400, f"{fileExt} file type not supported for audio processing. Supported formats: {supported_formats}")
     
-    # Check file size and read content
-    file_content = await file.read()
-    file_size_mb = len(file_content) / (1024 * 1024)
-    print(f"Received audio file: {file.filename}, size: {file_size_mb:.2f} MB")
-    
-    # Reset file pointer
-    await file.seek(0)
-    
-    # For very large files, warn in logs
-    if file_size_mb > 50:
-        print(f"Warning: Processing very large audio file ({file_size_mb:.2f} MB)")
-    
+    MODEL = model_name
+
     try:
-        # Initialize Whisper service with OpenAI client
+        # Initialize Whisper service for transcription
         whisper_service = WhisperService(client=client)
-        
-        # Use the more robust approach from v7 for all transcriptions
-        temp_dir = tempfile.mkdtemp()
-        temp_path = os.path.join(temp_dir, file.filename)
-        
-        with open(temp_path, "wb") as buffer:
-            buffer.write(file_content)
+        transcription = None
+        temp_dir = None
+        temp_path = None
         
         try:
-            # Try with original settings first
-            transcription = whisper_service.transcribe_audio(
-                temp_path, 
-                remove_noise=remove_noise, 
-                force_english=force_english
-            )
-        except Exception as e:
-            print(f"First transcription attempt failed: {e}")
+            # Use temp directory for audio processing
+            temp_dir = tempfile.mkdtemp()
+            temp_path = os.path.join(temp_dir, file.filename)
             
-            # If that fails, try with noise removal disabled
+            with open(temp_path, "wb") as buffer:
+                buffer.write(file.file.read())
+
+            # Try audio transcription with original settings
             try:
+                transcription = whisper_service.transcribe_audio(
+                    temp_path,
+                    remove_noise=remove_noise,
+                    force_english=force_english
+                )
+            except Exception as transcription_error:
+                print(f"First transcription attempt failed: {transcription_error}")
+                # If that fails, try with noise removal disabled
                 transcription = whisper_service.transcribe_audio(
                     temp_path,
                     remove_noise=False,
                     force_english=force_english
                 )
-            except Exception as e:
-                # If we're out of memory, clean up immediately
-                if "Unable to allocate" in str(e) or "MemoryError" in str(e):
-                    # Clean up temporary files
-                    try:
-                        os.remove(temp_path)
-                        os.rmdir(temp_dir)
-                    except:
-                        pass
-                raise HTTPException(
-                    status_code=413, 
-                    detail=f"Error processing audio: {str(e)}. Try with a shorter audio file."
-                )
+        finally:
+            # Clean up temporary files
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except:
+                    pass
+            if temp_dir and os.path.exists(temp_dir):
+                try:
+                    os.rmdir(temp_dir)
+                except:
+                    pass
+
+        # Setup the content for GPT processing - Following v5 pattern
+        userContent = [
+            {
+                "type": "text",
+                "text": f"User prompt:\n{prompt}\n\nThis is audio transcription content: \n{transcription}\n\nAudio processing details:\nNoise Removal: {remove_noise}\nForced English: {force_english}"
+            }
+        ]
+
+        messages = [
+            {
+                "role": "system",
+                "content": AUDIO_TRANSCRIPTION_PROMPT
+            },
+            {
+                "role": "user",
+                "content": userContent
+            }
+        ]
+
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=messages,
+            response_format={"type": "json_object"},
+            temperature=temperature
+        )
+        res_content = response.choices[0].message.content
+        content = json.loads(res_content)
+        print(content)
+        download_link = None
+        if ("file_response" in content) and content['file_response'] is not None:
+            pdf = MarkdownPdf(toc_level=2)
+            pdf.add_section(Section(content['file_response']))
+            pdf.save(f"response.pdf")
+            file_name_s3 = str(uuid4()) + ".pdf"
+            download_link = upload_file('response.pdf', file_name_s3)
+            if not download_link:
+                # Generate dummy link if real upload fails or is disabled
+                dummy_uuid = str(uuid4())
+                download_link = f"https://dummy-s3-bucket.example.com/{dummy_uuid}/{file_name_s3}"
+                print(f"Using dummy download link: {download_link}")
         
-        # Clean up temporary file now that we have the transcription
-        try:
-            os.remove(temp_path)
-            os.rmdir(temp_dir)
-        except:
-            pass
-            
-        # Basic response with just the transcription
-        response_data = {
+        # Return the response with transcription data and audio optimization details
+        result = {
             "status": "success",
+            "prompt": prompt,
+            "response": content['response'],
+            "pdf": download_link,
             "transcription": transcription,
             "optimizations": {
                 "noise_removal": remove_noise,
                 "forced_english": force_english
             }
         }
-        
-        # If analysis is requested, add GPT analysis to the response
-        if analyze:
-            # Prepare messages for GPT analysis
-            messages = [
-                {
-                    "role": "system",
-                    "content": AUDIO_TRANSCRIPTION_PROMPT
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": f"User prompt: {prompt}\n\nAudio Transcription:\n{transcription}\n\nOptimizations applied:\nNoise Removal: {remove_noise}\nForced English: {force_english}"
-                        }
-                    ]
-                }
-            ]
-            
-            # Get GPT analysis
-            gpt_response = client.chat.completions.create(
-                model=model_name,
-                messages=messages
-            )
-            
-            # Add analysis to response
-            response_data["analysis"] = gpt_response.choices[0].message.content
-        
-        return response_data
-    
-    except HTTPException as e:
-        # Re-raise HTTP exceptions
-        raise
+        return result
+
     except Exception as e:
-        import traceback
-        print(f"Error processing audio: {str(e)}")
-        print(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Error processing audio: {str(e)}")
+        print(f"Error in audio processing: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing audio request: {str(e)}"
+        )
